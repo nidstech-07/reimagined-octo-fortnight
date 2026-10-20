@@ -1,0 +1,445 @@
+import mysql.connector
+from mysql.connector import Error
+
+# Update these settings to match your MySQL installation.
+DB_CONFIG = {
+    "host": "localhost",
+    "user": "root",
+    "password": "Prasad@123",
+}
+
+
+def connect_database():
+    """Create the database if needed, then connect to it."""
+    connection = mysql.connector.connect(**DB_CONFIG)
+    cursor = connection.cursor()
+    cursor.execute("CREATE DATABASE IF NOT EXISTS student_management")
+    cursor.close()
+    connection.close()
+
+    config = {**DB_CONFIG, "database": "student_management"}
+    return mysql.connector.connect(**config)
+
+
+def setup_tables(cursor, connection):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS login (
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(100) NOT NULL,
+            role VARCHAR(20) NOT NULL
+        )
+    """)
+
+    # Demo accounts from the supplied program. Change these before real use.
+    login_data = [
+        ("admin1", "admin123", "admin"),
+        ("principal", "headadmin", "admin"),
+        ("system_admin", "sys@2025", "admin"),
+        ("management", "mgmt2025", "admin"),
+        ("director", "dir2025", "admin"),
+        ("teacher1", "teach123", "teacher"),
+        ("teacher2", "teach456", "teacher"),
+        ("math_teacher", "math2025", "teacher"),
+        ("science_teacher", "sci2025", "teacher"),
+        ("english_teacher", "eng2025", "teacher"),
+        ("student1", "stud123", "student"),
+        ("student2", "stud456", "student"),
+        ("nidhi", "pass2025", "student"),
+        ("rohan", "rohan2025", "student"),
+        ("aisha", "aisha2025", "student"),
+    ]
+    for record in login_data:
+        cursor.execute("""
+            INSERT IGNORE INTO login (username, password, role)
+            VALUES (%s, %s, %s)
+        """, record)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            student_id INT PRIMARY KEY,
+            roll_no VARCHAR(20),
+            name VARCHAR(100),
+            gender VARCHAR(10),
+            dob DATE,
+            class_name VARCHAR(20),
+            section VARCHAR(10),
+            adm_yr YEAR,
+            email VARCHAR(100),
+            guardian_name VARCHAR(100),
+            contact_no VARCHAR(15)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS academics (
+            student_id INT PRIMARY KEY,
+            name VARCHAR(100),
+            class_name VARCHAR(20),
+            exam_name VARCHAR(50),
+            physics INT,
+            chemistry INT,
+            math INT,
+            english INT,
+            computer INT,
+            percentage FLOAT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            attendance_id INT AUTO_INCREMENT PRIMARY KEY,
+            student_id INT NOT NULL,
+            roll_no VARCHAR(20),
+            name VARCHAR(100),
+            doa DATE,
+            class_name VARCHAR(20),
+            section VARCHAR(10),
+            status CHAR(1),
+            UNIQUE KEY unique_student_attendance (student_id, doa)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fee (
+            fee_id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            class_name VARCHAR(20),
+            amount_paid DECIMAL(10, 2) NOT NULL,
+            payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS schedule (
+            club VARCHAR(30) PRIMARY KEY,
+            event_date DATE
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS register (
+            registration_id INT AUTO_INCREMENT PRIMARY KEY,
+            club_name VARCHAR(30),
+            student_name VARCHAR(100),
+            class_name VARCHAR(20),
+            UNIQUE KEY unique_club_registration (club_name, student_name)
+        )
+    """)
+    connection.commit()
+
+
+def login_user(cursor):
+    print("\n=== LOGIN ===")
+    username = input("Username: ").strip()
+    password = input("Password: ").strip()
+    cursor.execute(
+        "SELECT username, role FROM login WHERE username = %s AND password = %s",
+        (username, password),
+    )
+    user = cursor.fetchone()
+    if user:
+        print(f"\nLogin successful. Welcome, {user[0]}! Role: {user[1]}\n")
+        return user
+    print("\nLogin unsuccessful. Invalid username or password.\n")
+    return None
+
+
+def add_student(cursor, connection):
+    try:
+        values = (
+            int(input("Student ID: ")),
+            input("Roll number: ").strip(),
+            input("Name: ").strip(),
+            input("Gender: ").strip(),
+            input("Date of birth (YYYY-MM-DD): ").strip() or None,
+            input("Class: ").strip(),
+            input("Section: ").strip(),
+            input("Admission year (YYYY): ").strip() or None,
+            input("Email: ").strip(),
+            input("Guardian name: ").strip(),
+            input("Contact number: ").strip(),
+        )
+        cursor.execute("""
+            INSERT INTO students
+            (student_id, roll_no, name, gender, dob, class_name, section,
+             adm_yr, email, guardian_name, contact_no)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, values)
+        connection.commit()
+        print("Student added successfully.")
+    except (ValueError, Error) as exc:
+        connection.rollback()
+        print(f"Could not add student: {exc}")
+
+
+def view_records(cursor, table, where_id=False):
+    if where_id:
+        try:
+            student_id = int(input("Enter student ID: "))
+        except ValueError:
+            print("Student ID must be a number.")
+            return
+        cursor.execute(f"SELECT * FROM {table} WHERE student_id = %s", (student_id,))
+    else:
+        cursor.execute(f"SELECT * FROM {table}")
+    rows = cursor.fetchall()
+    if not rows:
+        print("No records found.")
+        return
+    for row in rows:
+        print(row)
+
+
+def students_menu(cursor, connection):
+    while True:
+        print("\n=== STUDENT MANAGEMENT ===")
+        print("1. Add student\n2. Display all students\n3. Find student by ID\n4. Back")
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            add_student(cursor, connection)
+        elif choice == "2":
+            view_records(cursor, "students")
+        elif choice == "3":
+            view_records(cursor, "students", True)
+        elif choice == "4":
+            break
+        else:
+            print("Invalid choice.")
+
+
+def add_academic_record(cursor, connection):
+    try:
+        student_id = int(input("Student ID: "))
+        name = input("Student name: ").strip()
+        class_name = input("Class: ").strip()
+        exam_name = input("Exam name: ").strip()
+        physics = int(input("Physics marks: "))
+        chemistry = int(input("Chemistry marks: "))
+        math = int(input("Math marks: "))
+        english = int(input("English marks: "))
+        computer = int(input("Computer marks: "))
+        percentage = float(input("Percentage: "))
+        cursor.execute("""
+            INSERT INTO academics
+            (student_id, name, class_name, exam_name, physics, chemistry,
+             math, english, computer, percentage)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (student_id, name, class_name, exam_name, physics, chemistry,
+              math, english, computer, percentage))
+        connection.commit()
+        print("Academic record added successfully.")
+    except (ValueError, Error) as exc:
+        connection.rollback()
+        print(f"Could not add academic record: {exc}")
+
+
+def academics_menu(cursor, connection):
+    while True:
+        print("\n=== ACADEMIC MANAGEMENT ===")
+        print("1. Add academic record\n2. Display all records\n3. Find record by student ID\n4. Back")
+        choice = input("Choose: ").strip()
+        if choice == "1":
+            add_academic_record(cursor, connection)
+        elif choice == "2":
+            view_records(cursor, "academics")
+        elif choice == "3":
+            view_records(cursor, "academics", True)
+        elif choice == "4":
+            break
+        else:
+            print("Invalid choice.")
+
+
+def attendance_menu(cursor, connection):
+    while True:
+        print("\n=== ATTENDANCE MANAGEMENT ===")
+        print("1. Add attendance\n2. Display all attendance\n3. Find by student ID")
+        print("4. Update attendance status\n5. Delete attendance record\n6. Back")
+        choice = input("Choose: ").strip()
+        try:
+            if choice == "1":
+                student_id = int(input("Student ID: "))
+                roll_no = input("Roll number: ").strip()
+                name = input("Student name: ").strip()
+                date = input("Attendance date (YYYY-MM-DD): ").strip()
+                class_name = input("Class: ").strip()
+                section = input("Section: ").strip()
+                status = input("Present or absent (P/A): ").strip().upper()
+                if status not in ("P", "A"):
+                    print("Status must be P or A.")
+                    continue
+                cursor.execute("""
+                    INSERT INTO attendance
+                    (student_id, roll_no, name, doa, class_name, section, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (student_id, roll_no, name, date, class_name, section, status))
+                connection.commit()
+                print("Attendance added.")
+            elif choice == "2":
+                view_records(cursor, "attendance")
+            elif choice == "3":
+                view_records(cursor, "attendance", True)
+            elif choice == "4":
+                student_id = int(input("Student ID: "))
+                date = input("Attendance date (YYYY-MM-DD): ").strip()
+                status = input("New status (P/A): ").strip().upper()
+                if status not in ("P", "A"):
+                    print("Status must be P or A.")
+                    continue
+                cursor.execute(
+                    "UPDATE attendance SET status = %s WHERE student_id = %s AND doa = %s",
+                    (status, student_id, date),
+                )
+                connection.commit()
+                print("Attendance updated." if cursor.rowcount else "Record not found.")
+            elif choice == "5":
+                student_id = int(input("Student ID: "))
+                date = input("Attendance date (YYYY-MM-DD): ").strip()
+                cursor.execute(
+                    "DELETE FROM attendance WHERE student_id = %s AND doa = %s",
+                    (student_id, date),
+                )
+                connection.commit()
+                print("Attendance deleted." if cursor.rowcount else "Record not found.")
+            elif choice == "6":
+                break
+            else:
+                print("Invalid choice.")
+        except (ValueError, Error) as exc:
+            connection.rollback()
+            print(f"Operation failed: {exc}")
+
+
+def fee_menu(cursor, connection):
+    while True:
+        print("\n=== FEE MANAGEMENT ===")
+        print("1. Record fee payment\n2. Display payments\n3. Find receipts by student name\n4. Back")
+        choice = input("Choose: ").strip()
+        try:
+            if choice == "1":
+                name = input("Student name: ").strip()
+                class_name = input("Class: ").strip()
+                amount = float(input("Amount paid: "))
+                cursor.execute(
+                    "INSERT INTO fee (name, class_name, amount_paid) VALUES (%s, %s, %s)",
+                    (name, class_name, amount),
+                )
+                connection.commit()
+                print("Payment recorded successfully.")
+            elif choice == "2":
+                cursor.execute("SELECT * FROM fee ORDER BY payment_date DESC")
+                rows = cursor.fetchall()
+                for row in rows:
+                    print(row)
+                if not rows:
+                    print("No payments found.")
+            elif choice == "3":
+                name = input("Student name: ").strip()
+                cursor.execute("SELECT * FROM fee WHERE name = %s", (name,))
+                rows = cursor.fetchall()
+                if rows:
+                    print("PAYMENT RECEIPT DETAILS")
+                    for row in rows:
+                        print(row)
+                else:
+                    print("No payment found for that student.")
+            elif choice == "4":
+                break
+            else:
+                print("Invalid choice.")
+        except (ValueError, Error) as exc:
+            connection.rollback()
+            print(f"Operation failed: {exc}")
+
+
+def club_menu(cursor, connection):
+    while True:
+        print("\n=== CLUB MANAGEMENT ===")
+        print("1. Schedule a club event\n2. Display club schedule\n3. Register for a club\n4. Display registrations\n5. Back")
+        choice = input("Choose: ").strip()
+        try:
+            if choice == "1":
+                club = input("Club name: ").strip()
+                date = input("Event date (YYYY-MM-DD): ").strip()
+                cursor.execute(
+                    "INSERT INTO schedule (club, event_date) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE event_date = VALUES(event_date)",
+                    (club, date),
+                )
+                connection.commit()
+                print("Club schedule saved.")
+            elif choice == "2":
+                cursor.execute("SELECT * FROM schedule ORDER BY event_date")
+                rows = cursor.fetchall()
+                for row in rows:
+                    print(row)
+                if not rows:
+                    print("No clubs scheduled.")
+            elif choice == "3":
+                club = input("Club name: ").strip()
+                student = input("Student name: ").strip()
+                class_name = input("Class: ").strip()
+                cursor.execute("""
+                    INSERT INTO register (club_name, student_name, class_name)
+                    VALUES (%s, %s, %s)
+                """, (club, student, class_name))
+                connection.commit()
+                print("Registration successful.")
+            elif choice == "4":
+                cursor.execute("SELECT * FROM register ORDER BY club_name, student_name")
+                rows = cursor.fetchall()
+                for row in rows:
+                    print(row)
+                if not rows:
+                    print("No registrations found.")
+            elif choice == "5":
+                break
+            else:
+                print("Invalid choice.")
+        except Error as exc:
+            connection.rollback()
+            print(f"Operation failed: {exc}")
+
+
+def main():
+    connection = None
+    cursor = None
+    try:
+        connection = connect_database()
+        cursor = connection.cursor()
+        setup_tables(cursor, connection)
+        print("Student Management System database is ready.")
+
+        if not login_user(cursor):
+            return
+
+        while True:
+            print("\n===== STUDENT MANAGEMENT SYSTEM =====")
+            print("1. Student records\n2. Academic records\n3. Attendance")
+            print("4. Fee management\n5. Club management\n6. Exit")
+            choice = input("Choose an option: ").strip()
+            if choice == "1":
+                students_menu(cursor, connection)
+            elif choice == "2":
+                academics_menu(cursor, connection)
+            elif choice == "3":
+                attendance_menu(cursor, connection)
+            elif choice == "4":
+                fee_menu(cursor, connection)
+            elif choice == "5":
+                club_menu(cursor, connection)
+            elif choice == "6":
+                print("Closing Student Management System. Goodbye!")
+                break
+            else:
+                print("Invalid choice. Please try again.")
+    except Error as exc:
+        print(f"Database error: {exc}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None and connection.is_connected():
+            connection.close()
+
+
+if __name__ == "__main__":
+    main()
